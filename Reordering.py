@@ -80,6 +80,26 @@ def reorder_rec(input_tree: U.UDTree, comparator_dict, root_idx, output_arr):
             reorder_rec(input_tree, comparator_dict, n, output_arr)
 
 
+def switch_keys(tree, key_mapping):
+    new_nodes = {
+        key_mapping[k]: deepcopy(v) for k, v in tree.nodes.items()
+    }
+    # Update node IDs
+    for k, v in new_nodes.items():
+        v.ID = key_mapping[v.ID]
+        v.HEAD = key_mapping[v.HEAD]
+        new_nodes[k] = v
+    new_graph = {
+        key_mapping[k]: deepcopy(v) for k, v in tree.graph.items()
+    }
+    # Update graph edges
+    for k, edge_list in new_graph.items():
+        for i, new_edge in enumerate(edge_list):
+            edge_list[i].head = key_mapping[new_edge.head]
+        new_graph[k] = edge_list
+    return U.UDTree(tree.id_lines, tree.keys, new_nodes, new_graph)
+
+
 def reorder(input_tree: U.UDTree, comparator_dict):
     '''Reorders the constituents in the input tree in a top-bottom
     fashion based on the ordering from the comparator dict. Punctuation
@@ -93,11 +113,15 @@ def reorder(input_tree: U.UDTree, comparator_dict):
     reorder_rec(input_tree, comparator_dict, root_idx, new_order)
 
     # Transform the tree based on the new ordering.
-    new_tree = deepcopy(input_tree)
-    old_order = input_tree.keys
+    # We simply map the old keys to their new positions
+    # and then switch the keys.
+    new_tree = U.purge_dotted_nodes(input_tree)
+    assert len(new_order) == len(new_tree.keys)
     idx_map = {
-        old_idx: new_idx for old_idx, new_idx in zip(old_order, new_order)
+        new_idx: old_idx for old_idx, new_idx in zip(new_tree.keys, new_order)
     }
+    # Map the root to itself
+    idx_map['0'] = '0'
+    new_tree = switch_keys(new_tree, idx_map)
 
-
-    return new_order
+    return new_tree

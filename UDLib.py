@@ -3,7 +3,7 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import List, Dict, Tuple
 
-from nltk.corpus import wordnet
+# from nltk.corpus import wordnet
 
 
 # Constants
@@ -229,6 +229,15 @@ def conll2graph_w_POS_filter(record, disallowed_POS, relation_list='everywhere')
     return id_lines, keys, nodes, graph
 
 
+def purge_dotted_nodes(tree: UDTree):
+    new_keys = [el for el in tree.keys if '.' not in el]
+    new_nodes = { k: v for k, v in tree.nodes.items() if '.' not in k }
+    new_graph = {
+        k: [el for el in v if '.' not in el.head] for k, v in tree.graph.items() if '.' not in k
+    }
+    return UDTree(tree.id_lines, new_keys, new_nodes, new_graph)
+
+
 def split_predicted_upos(upos_string: str) -> Tuple[str, Dict[str, float]]:
     gold_upos_str, *upos_w_probs = upos_string.split('|')
     gold_upos = gold_upos_str.split(':')[1]
@@ -239,12 +248,12 @@ def split_predicted_upos(upos_string: str) -> Tuple[str, Dict[str, float]]:
     return (gold_upos, probs)
 
 
-def real_propn(lemma):
-    for synset in wordnet.synsets(lemma):
-        if synset.hypernyms():
-            return False
-    else:
-        return True
+# def real_propn(lemma):
+#     for synset in wordnet.synsets(lemma):
+#         if synset.hypernyms():
+#             return False
+#     else:
+#         return True
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@ def conllu2trees(path):
     with open(path, 'r') as inp:
         txt = inp.read().strip()
         blocks = txt.split('\n\n')
-        return [U.UDTree(*U.conll2graph(block)) for block in blocks]
+    return [U.UDTree(*U.conll2graph(block)) for block in blocks]
 
 
 # Learn Japanese ordering and apply it to English.
