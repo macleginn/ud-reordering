@@ -83,6 +83,10 @@ class UDTree:
         return '\n'.join(lines)
 
 
+    def get_sentence(self):
+        return ' '.join(self.nodes[key].FORM.lower() for key in self.keys)
+
+
     def get_node_children(self, node_idx) -> List[str]:
         return [el.head for el in self.graph[node_idx] if el.directionality == "down"]
 

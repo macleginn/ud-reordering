@@ -4,34 +4,91 @@ from typing import List
 from pprint import pprint
 
 import UDLib
+import z3
+
+
+def no_preference(estimate_dict, rel1, rel2):
+    if (rel1, rel2) in estimate_dict:
+        return abs(estimate_dict[(rel1, rel2)] - 0.5) < 0.2
+    elif (rel2, rel1) in estimate_dict:
+        return abs(estimate_dict[(rel2, rel1)] - 0.5) < 0.2
+    else:
+        raise ValueError(f"An unknown pair of relations: {rel1}, {rel2}")
+
+
+def is_bigger(estimate_dict, rel1, rel2):
+    if (rel1, rel2) in estimate_dict:
+        return estimate_dict[(rel1, rel2)] > 0
+    elif (rel2, rel1) in estimate_dict:
+        return estimate_dict[(rel2, rel1)] < 0
+    else:
+        raise ValueError(f"An unknown pair of relations: {rel1}, {rel2}")
+
+
+def check_expansion(deprel, estimates):
+    '''Try to satisfy the learned ordering constraints
+    by assigning linear indices to UD relations. If successful,
+    return the indices; return None otherwise.'''
+
+    s = z3.Solver()
+
+    # Create variables for all participating relations.
+    # Index them by their names.
+    all_rels = set()
+    for rel1, rel2 in estimates:
+        all_rels.add(rel1)
+        all_rels.add(rel2)
+    var_dict = {
+        rel: z3.Ints(rel)[0] for rel in all_rels
+    }
+
+    # Add learned constraints in the order of decreasing magnitude.
+    ordered_constraints = list(estimates.items())
+    ordered_constraints.sort(key = lambda x: abs(x[1]), reverse=True)
+    for (i, ((rel1, rel2), num)) in enumerate(ordered_constraints):
+        if rel1 == rel2:
+            continue
+        a = var_dict[rel1]
+        b = var_dict[rel2]
+        s.push()
+        if num > 0:
+            s.add(a > b)
+        else:
+            s.add(a < b)
+        if s.check() == z3.unsat:
+            print(f"{deprel:>10}: {i} most frequent constraints satisfiable.")
+            s.pop()
+            break
+    else:
+        print(f"{deprel:>10}: all constraints were satisfied.")
+    s.check()
+    model = s.model()
+    ordering_dict = {
+        rel: model[var_dict[rel]] for rel in all_rels
+    }
+    return ordering_dict
 
 
 def ordering_is_valid(estimate_dict):
-    '''Checks that a valid ordering was learned from the data.'''
-    is_bigger  = lambda deprel, x, y: estimate_dict[deprel][(x, y)] > 0.5
+    '''Checks that a valid ordering was learned from the data
+    by trying to find indices satysfying ordering constraints
+    from the data. Dict[deprel: str,Dict[deprel: str, index: int]]
+    is returned if the ordering is valid. None is returned otherwise.'''
+
+    indices_dict = {}
     for deprel in estimate_dict:
-        ordered_pairs = []
-        for el1, el2 in estimate_dict[deprel]:
-            if is_bigger(deprel, el1, el2):
-                ordered_pairs.append((el2, el1))
-            else:
-                ordered_pairs.append((el1, el2))
-    for x1, y1 in ordered_pairs:
-        if x1 == y1:
-            continue
-        for x2, y2 in ordered_pairs:
-            if x2 == y2:
-                continue
-            if y1 == x2:
-                # If a goes before b and b goes before c,
-                # a should go before c, i.e. there should be
-                # a pair (a, c) in the list.
-                if (x1, y2) not in ordered_pairs:
-                    return False
-    return True
+        indices_for_deprel = check_expansion(deprel, estimate_dict[deprel])
+        if indices_for_deprel is None:
+            return None
+        else:
+            indices_dict[deprel] = indices_for_deprel
+    return indices_dict
 
 
-def process_tree(UD_tree: UDLib.UDTree, UD_root: str, main_clause: bool, counter_dict):
+def process_tree(UD_tree: UDLib.UDTree,
+                 UD_root: str,
+                 main_clause: bool,
+                 counter_dict):
     # Can't determine the ordering when virtual nodes are present.
     # Give up here if the root is a virtual node and exclude them from
     # the node's children later.
@@ -41,7 +98,7 @@ def process_tree(UD_tree: UDLib.UDTree, UD_root: str, main_clause: bool, counter
     # Each head node has its own ordering of children
     root_rel = UD_tree.nodes[UD_root].DEPREL.split(':')[0]
     if root_rel not in counter_dict:
-        counter_dict[root_rel] = defaultdict(Counter)
+        counter_dict[root_rel] = defaultdict(int)
     local_counter_dict = counter_dict[root_rel]
 
     # Not calling this 'children' because we'll have to append
@@ -66,10 +123,10 @@ def process_tree(UD_tree: UDLib.UDTree, UD_root: str, main_clause: bool, counter
         key = tuple(sorted([deprel1, deprel2]))
         if key == (deprel1, deprel2):
             # Alphetical order preserved in the tree
-            local_counter_dict[key][0] += 1
+            local_counter_dict[key] -= 1
         else:
             # Alphabetical order was "flipped"
-            local_counter_dict[key][1] += 1
+            local_counter_dict[key] += 1
 
     # Recurse
     for child_idx in nodes:
@@ -91,12 +148,4 @@ def get_ml_directionality_estimates(UD_trees: List[UDLib.UDTree]):
             UD_root,
             True,
             counter_dict)
-    # pprint(counter_dict_main)
-    # pprint(counter_dict_dep)
-    # return
-    result_dict = {}
-    for deprel, deprel_children_counter_dict in counter_dict.items():
-        result_dict[deprel] = {}
-        for rel_pair, counts in deprel_children_counter_dict.items():
-            result_dict[deprel][rel_pair] = counts[1] / (sum(counts.values()))
-    return result_dict
+    return counter_dict
