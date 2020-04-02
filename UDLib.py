@@ -252,6 +252,20 @@ def split_predicted_upos(upos_string: str) -> Tuple[str, Dict[str, float]]:
     return (gold_upos, probs)
 
 
+def get_deprel(node_idx: str, tree: UDTree):
+    '''Reintroduces neg into the set of syntactic relations.'''
+    node = tree.nodes[node_idx]
+    if node.FORM in {'not', 'n’t', "n't"}:  # for English
+        return 'neg'
+    deprel = node.DEPREL.split(':')[0]
+    if deprel != 'advmod':
+        return deprel
+    if "Polarity=Neg" in node.FEATS:  # advmod + Polarity=Neg -> neg
+        return "neg"
+    else:
+        return deprel
+
+
 # def real_propn(lemma):
 #     for synset in wordnet.synsets(lemma):
 #         if synset.hypernyms():

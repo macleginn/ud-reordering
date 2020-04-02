@@ -85,10 +85,10 @@ def ordering_is_valid(estimate_dict):
     return indices_dict
 
 
-def process_tree(UD_tree: UDLib.UDTree,
-                 UD_root: str,
-                 main_clause: bool,
-                 counter_dict):
+def process_subtree(UD_tree: UDLib.UDTree,
+                    UD_root: str,
+                    main_clause: bool,
+                    counter_dict):
     # Can't determine the ordering when virtual nodes are present.
     # Give up here if the root is a virtual node and exclude them from
     # the node's children later.
@@ -96,7 +96,7 @@ def process_tree(UD_tree: UDLib.UDTree,
         return
 
     # Each head node has its own ordering of children
-    root_rel = UD_tree.nodes[UD_root].DEPREL.split(':')[0]
+    root_rel = UDLib.get_deprel(UD_root, UD_tree)
     if root_rel not in counter_dict:
         counter_dict[root_rel] = defaultdict(int)
     local_counter_dict = counter_dict[root_rel]
@@ -106,7 +106,7 @@ def process_tree(UD_tree: UDLib.UDTree,
     nodes = [
         el for el in UD_tree.get_node_children(UD_root) \
         if '.' not in el \
-        and UD_tree.nodes[el].DEPREL != 'punct'
+        and UDLib.get_deprel(el, UD_tree) != 'punct'
     ]
     # If no children, nothing to count in this subtree.
     if not nodes:
@@ -116,23 +116,21 @@ def process_tree(UD_tree: UDLib.UDTree,
     # linear order.
     nodes.append(UD_root)
     nodes.sort(key=int)
+
     for idx1, idx2 in combinations(nodes, 2):
-        # Remove language-specific refinements
-        deprel1 = UD_tree.nodes[idx1].DEPREL.split(':')[0]
-        deprel2 = UD_tree.nodes[idx2].DEPREL.split(':')[0]
-        key = tuple(sorted([deprel1, deprel2]))
-        if key == (deprel1, deprel2):
-            # Alphetical order preserved in the tree
-            local_counter_dict[key] -= 1
+        assert int(idx1) < int(idx2)
+        deprel1 = UDLib.get_deprel(idx1, UD_tree)
+        deprel2 = UDLib.get_deprel(idx2, UD_tree)
+        if deprel2 > deprel1:
+            local_counter_dict[(deprel1, deprel2)] -= 1
         else:
-            # Alphabetical order was "flipped"
-            local_counter_dict[key] += 1
+            local_counter_dict[(deprel2, deprel1)] += 1
 
     # Recurse
     for child_idx in nodes:
         if child_idx == UD_root:
             continue
-        process_tree(
+        process_subtree(
             UD_tree,
             child_idx,
             main_clause,
@@ -143,7 +141,7 @@ def get_ml_directionality_estimates(UD_trees: List[UDLib.UDTree]):
     counter_dict = {}
     for UD_tree in UD_trees:
         UD_root = UD_tree.get_real_root()
-        process_tree(
+        process_subtree(
             UD_tree,
             UD_root,
             True,

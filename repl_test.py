@@ -1,10 +1,48 @@
 import importlib
 import pathlib
 from pprint import pprint
+from collections import Counter
 
 import UDLib as U
 import Estimation as E
 import Reordering as R
+
+
+def refresh_imports():
+    importlib.reload(U)
+    importlib.reload(E)
+    importlib.reload(R)
+
+
+def reorder_treebank(treebank, estimates):
+    reordered = []
+    error_log = Counter()
+    for i, tree in enumerate(treebank):
+        try:
+            reordered.append(R.reorder(tree, estimates, True, error_log))
+        except ValueError as e:
+            print(i, e)
+            continue
+    return reordered, error_log
+
+
+def reorder_ewt(estimates, lang_code):
+    error_log = Counter()
+    for i, treebank in enumerate([
+        trees_en_ewt_train,
+        trees_en_ewt_dev,
+        trees_en_ewt_test
+    ]):
+        reordered = []
+        for j, tree in enumerate(treebank):
+            try:
+                reordered.append(R.reorder(tree, estimates, True, error_log))
+            except ValueError as e:
+                print(j, e)
+                continue
+        with open(ouput_dir / f'en_{["ewt_train", "ewt_dev", "ewt_test"][i]}_reordered_{lang_code}_new.conllu', 'w') as out:
+            out.write('\n\n'.join(str(t) for t in reordered))
+    return error_log
 
 
 def conllu2trees(path):
@@ -29,81 +67,46 @@ data_dir = pathlib.Path('data')
 ouput_dir = pathlib.Path(data_dir / 'reordered')
 
 # English data
+trees_en_gum_train = conllu2trees(data_dir / 'en_gum-ud-train.conllu')
+trees_en_gum_dev = conllu2trees(data_dir / 'en_gum-ud-dev.conllu')
+trees_en_gum_test = conllu2trees(data_dir / 'en_gum-ud-test.conllu')
+
 trees_en_ewt_train = conllu2trees(data_dir / 'en_ewt-ud-train.conllu')
 trees_en_ewt_dev = conllu2trees(data_dir / 'en_ewt-ud-dev.conllu')
 trees_en_ewt_test = conllu2trees(data_dir / 'en_ewt-ud-test.conllu')
+
 trees_en_pud = conllu2trees(data_dir / 'en_pud-ud-test.conllu')
+
+for i, t in enumerate(trees_en_gum_test):
+    if 'not' in str(t):
+        print(i, t.get_sentence())
+        input()
+
 
 # Learn Japanese ordering and apply it to English.
 trees_ja = conllu2trees(data_dir / 'ja_pud-ud-test.conllu')
 estimates_ja = E.get_ml_directionality_estimates(trees_ja)
 # ordering_ja = E.ordering_is_valid(estimates_ja)
 
-for i, treebank in enumerate([
-    trees_en_ewt_dev,
-    trees_en_ewt_test
-]):
-    reordered = []
-    for tree in treebank:
-        try:
-            reordered.append(R.reorder(tree, estimates_ja))
-        except ValueError:
-            pprint(tree.id_lines[-1])
-            continue
-    with open(ouput_dir / f'en_{["ewt_dev", "ewt_test"][i]}_reordered.conllu', 'w') as out:
-        out.write('\n\n'.join(str(t) for t in reordered))
-
-
 # Learn German ordering and apply it to English.
 trees_de = conllu2trees(data_dir / 'de_gsd-ud-train.conllu')
 estimates_de = E.get_ml_directionality_estimates(trees_de)
-
-for i, treebank in enumerate([
-    trees_en_ewt_train,
-    trees_en_ewt_dev,
-    trees_en_ewt_test
-]):
-    reordered = []
-    for tree in treebank:
-        try:
-            reordered.append(R.reorder(tree, estimates_de))
-        except ValueError:
-            pprint(tree.id_lines[-1])
-            continue
-    with open(ouput_dir / f'en_{["ewt_train", "ewt_dev", "ewt_test"][i]}_reordered_de_new.conllu', 'w') as out:
-        out.write('\n\n'.join(str(t) for t in reordered))
-
+error_log_de = reorder_ewt(estimates_de, 'de')
 
 # Learn Arabic ordering and apply it to English.
 trees_ar = conllu2trees(data_dir / 'ar_pud-ud-test.conllu')
 estimates_ar = E.get_ml_directionality_estimates(trees_ar)
-report_reordering_progress(trees_en_ewt_train, estimates_ar)
-
-for i, treebank in enumerate([
-    trees_en_ewt_train,
-    trees_en_ewt_dev,
-    trees_en_ewt_test
-]):
-    reordered = []
-    for tree in treebank:
-        try:
-            reordered.append(R.reorder(tree, estimates_ga))
-        except ValueError:
-            pprint(tree.id_lines[-1])
-            continue
-    with open(ouput_dir / f'en_{["ewt_train", "ewt_dev", "ewt_test"][i]}_reordered_ar_new.conllu', 'w') as out:
-        out.write('\n\n'.join(str(t) for t in reordered))
-
-
-
-for i, t in enumerate(trees_en_ewt_test):
-    if 'nuclear' in str(t) and 'Iran' in str(t):
-        print(i)
+error_log_ar = reorder_ewt(estimates_ar, 'ar')
 
 # Learn Irish ordering and apply it to English.
 trees_ga = conllu2trees(data_dir / 'ga_idt_all.conllu')
 estimates_ga = E.get_ml_directionality_estimates(trees_ga)
-# report_reordering_progress(trees_en_ewt, estimates_ga)
+error_log_ga = reorder_ewt(estimates_ga, 'ga')
+
+ewt_test_ga, error_log_ga_test = reorder_treebank(trees_en_ewt_test, estimates_ga)
+
+for i in range(20):
+    print(ewt_test_ga[i].get_sentence())
 
 importlib.reload(U)
 for i in range(30, 41):
@@ -113,26 +116,4 @@ for i in range(30, 41):
     print("Japanese:",R.reorder(trees_en_ewt_test[i], estimates_ja).get_sentence())
     print()
 
-for i, t in enumerate(trees_en_ewt_train):
-    print(i)
-    try:
-        _ = R.reorder(t, estimates_ga, True)
-    except ValueError as e:
-        print(e)
-        continue
-
-for i, treebank in enumerate([
-    trees_en_ewt_train,
-    trees_en_ewt_dev,
-    trees_en_ewt_test
-]):
-    reordered = []
-    for tree in treebank:
-        try:
-            reordered.append(R.reorder(tree, estimates_ga))
-        except ValueError:
-            pprint(tree.id_lines[-1])
-            continue
-    with open(ouput_dir / f'en_{["ewt_train", "ewt_dev", "ewt_test"][i]}_reordered_ga_new.conllu', 'w') as out:
-        out.write('\n\n'.join(str(t) for t in reordered))
 
