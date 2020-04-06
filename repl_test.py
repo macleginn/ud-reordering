@@ -7,11 +7,13 @@ import UDLib as U
 import Estimation as E
 import Reordering as R
 
+import ilp
 
 def refresh_imports():
     importlib.reload(U)
     importlib.reload(E)
     importlib.reload(R)
+    importlib.reload(ilp)
 
 
 def reorder_treebank(treebank, estimates):
@@ -46,7 +48,7 @@ def reorder_ewt(estimates, lang_code):
 
 
 def conllu2trees(path):
-    with open(path, 'r') as inp:
+    with open(path, 'r', encoding='utf-8') as inp:
         txt = inp.read().strip()
         blocks = txt.split('\n\n')
     return [U.UDTree(*U.conll2graph(block)) for block in blocks]
@@ -86,27 +88,50 @@ for i, t in enumerate(trees_en_gum_test):
 # Learn Japanese ordering and apply it to English.
 trees_ja = conllu2trees(data_dir / 'ja_pud-ud-test.conllu')
 estimates_ja = E.get_ml_directionality_estimates(trees_ja)
-# ordering_ja = E.ordering_is_valid(estimates_ja)
+result = ilp.ordering2indices(
+    ilp.get_pairwise_ordering(estimates_ja['root'])
+)
+for deprel, idx in sorted(result.items(), key = lambda x: x[1]):
+    print(f'{deprel}: {idx}')
+
 
 # Learn German ordering and apply it to English.
 trees_de = conllu2trees(data_dir / 'de_gsd-ud-train.conllu')
 estimates_de = E.get_ml_directionality_estimates(trees_de)
+
+ewt_en_de_test, ewt_de_test_error = reorder_treebank(trees_en_ewt_test, estimates_de)
+
 error_log_de = reorder_ewt(estimates_de, 'de')
 
 # Learn Arabic ordering and apply it to English.
 trees_ar = conllu2trees(data_dir / 'ar_pud-ud-test.conllu')
 estimates_ar = E.get_ml_directionality_estimates(trees_ar)
+result = ilp.ordering2indices(
+    ilp.get_pairwise_ordering(estimates_ar['root'])
+)
+for deprel, idx in sorted(result.items(), key = lambda x: x[1]):
+    print(f'{deprel}: {idx}')
+
+
+
 error_log_ar = reorder_ewt(estimates_ar, 'ar')
 
 # Learn Irish ordering and apply it to English.
 trees_ga = conllu2trees(data_dir / 'ga_idt_all.conllu')
 estimates_ga = E.get_ml_directionality_estimates(trees_ga)
+result = ilp.ordering2indices(
+    ilp.get_pairwise_ordering(estimates_ga['root'])
+)
+for deprel, idx in sorted(result.items(), key = lambda x: x[1]):
+    print(f'{deprel}: {idx}')
+
+
 error_log_ga = reorder_ewt(estimates_ga, 'ga')
 
 ewt_test_ga, error_log_ga_test = reorder_treebank(trees_en_ewt_test, estimates_ga)
 
 for i in range(20):
-    print(ewt_test_ga[i].get_sentence())
+    print(ewt_en_de_test[i].get_sentence())
 
 importlib.reload(U)
 for i in range(30, 41):

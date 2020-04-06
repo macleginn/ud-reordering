@@ -87,16 +87,17 @@ def ordering_is_valid(estimate_dict):
 
 def process_subtree(UD_tree: UDLib.UDTree,
                     UD_root: str,
-                    main_clause: bool,
-                    counter_dict):
+                    counter_dict,
+                    collapse_categories=False):
     # Can't determine the ordering when virtual nodes are present.
     # Give up here if the root is a virtual node and exclude them from
     # the node's children later.
     if '.' in UD_root:
         return
 
-    # Each head node has its own ordering of children
-    root_rel = UDLib.get_deprel(UD_root, UD_tree)
+    # Each head node has its own ordering of children.
+    # When categories are collapsed, this affects only the expansion level.
+    root_rel = UDLib.get_deprel(UD_root, UD_tree, collapse_categories)
     if root_rel not in counter_dict:
         counter_dict[root_rel] = defaultdict(int)
     local_counter_dict = counter_dict[root_rel]
@@ -121,10 +122,13 @@ def process_subtree(UD_tree: UDLib.UDTree,
         assert int(idx1) < int(idx2)
         deprel1 = UDLib.get_deprel(idx1, UD_tree)
         deprel2 = UDLib.get_deprel(idx2, UD_tree)
-        if deprel2 > deprel1:
-            local_counter_dict[(deprel1, deprel2)] -= 1
-        else:
-            local_counter_dict[(deprel2, deprel1)] += 1
+
+        local_counter_dict[(deprel1, deprel2)] += 1
+        # We used to have only unidirectional weights
+        # if deprel2 > deprel1:
+        #     local_counter_dict[(deprel1, deprel2)] -= 1
+        # else:
+        #     local_counter_dict[(deprel2, deprel1)] += 1
 
     # Recurse
     for child_idx in nodes:
@@ -133,8 +137,8 @@ def process_subtree(UD_tree: UDLib.UDTree,
         process_subtree(
             UD_tree,
             child_idx,
-            main_clause,
-            counter_dict)
+            counter_dict,
+            collapse_categories)
 
 
 def get_ml_directionality_estimates(UD_trees: List[UDLib.UDTree]):
@@ -144,6 +148,5 @@ def get_ml_directionality_estimates(UD_trees: List[UDLib.UDTree]):
         process_subtree(
             UD_tree,
             UD_root,
-            True,
             counter_dict)
     return counter_dict

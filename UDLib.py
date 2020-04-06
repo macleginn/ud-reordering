@@ -77,19 +77,15 @@ class UDTree:
     # Lists of (key, deprel, direction) tuples indexed by keys.
     graph: Dict[str, List[UDEdge]]
 
-
     def __str__(self):
         lines = self.id_lines + [str(self.nodes[key]) for key in self.keys]
         return '\n'.join(lines)
 
-
-    def get_sentence(self):
+    def get_sentence(self) -> str:
         return ' '.join(self.nodes[key].FORM.lower() for key in self.keys)
-
 
     def get_node_children(self, node_idx) -> List[str]:
         return [el.head for el in self.graph[node_idx] if el.directionality == "down"]
-
 
     def get_real_root(self) -> str:
         # A well-formed UD tree has a virtual root with a single child.
@@ -157,12 +153,13 @@ def conll2graph_w_POS_filter(record, disallowed_POS, relation_list='everywhere')
     if type(disallowed_POS) == str:
         disallowed_POS = [disallowed_POS]
 
-    # A set of nodes participating in relations where the the POS should be replaced.
+    # A set of nodes participating in relations where
+    # the POS should be replaced.
     affected_nodes = set()
     if relation_list != 'everywhere':
         assert type(relation_list) == list
-        # Iterate over nodes; add nodes with ingoing relations of the affected type
-        # and their parents to affected_nodes.
+        # Iterate over nodes; add nodes with ingoing relations of the affected
+        # type and their parents to affected_nodes.
         for line in record.splitlines():
             if line.startswith("#"):
                 continue
@@ -235,7 +232,7 @@ def conll2graph_w_POS_filter(record, disallowed_POS, relation_list='everywhere')
 
 def purge_dotted_nodes(tree: UDTree):
     new_keys = [el for el in tree.keys if '.' not in el]
-    new_nodes = { k: v for k, v in tree.nodes.items() if '.' not in k }
+    new_nodes = {k: v for k, v in tree.nodes.items() if '.' not in k}
     new_graph = {
         k: [el for el in v if '.' not in el.head] for k, v in tree.graph.items() if '.' not in k
     }
@@ -252,14 +249,41 @@ def split_predicted_upos(upos_string: str) -> Tuple[str, Dict[str, float]]:
     return (gold_upos, probs)
 
 
-def get_deprel(node_idx: str, tree: UDTree):
-    '''Reintroduces neg into the set of syntactic relations.'''
+def classify_deprel(deprel):
+    if deprel in {
+        'nsubj',
+        'obj',
+        'obl',
+        'iobj',
+        'nmod',
+        'appos'
+    }:
+        return 'np'
+    elif deprel in {
+        'csubj',
+        'ccomp',
+        'advcl',
+        'xcomp'
+    }:
+        return 'sub_clause'
+    else:
+        return deprel
+
+
+def get_deprel(node_idx: str, tree: UDTree, collapse_categories=False):
+    '''
+    Reintroduces neg into the set of syntactic relations.
+    Collapses deprels into several classes when asked.
+    '''
     node = tree.nodes[node_idx]
     if node.FORM in {'not', 'n’t', "n't"}:  # for English
         return 'neg'
     deprel = node.DEPREL.split(':')[0]
     if deprel != 'advmod':
-        return deprel
+        if collapse_categories:
+            return classify_deprel(deprel)
+        else:
+            return deprel
     if "Polarity=Neg" in node.FEATS:  # advmod + Polarity=Neg -> neg
         return "neg"
     else:
