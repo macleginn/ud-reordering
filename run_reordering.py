@@ -18,6 +18,11 @@ output_path       = sys.argv[3]
 input_trees = U.conllu2trees(input_corpus_path)
 with open(estimates_path, 'r', encoding='utf-8') as inp:
     estimates = json.load(inp)
-reordered_trees = [R.reorder_tree(t, estimates) for t in input_trees]
+reordered_trees = []
+for i, t in enumerate(input_trees):
+    try:
+        reordered_trees.append(R.reorder_tree(t, estimates))
+    except Exception as e:
+        print(f'Reordering failed on tree #{i}: {e}')
 with open(output_path, 'w', encoding='utf-8') as out:
     print('\n\n'.join(str(t) for t in reordered_trees), file = out)
