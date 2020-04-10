@@ -54,11 +54,13 @@ def reorder_tree_rec(tree: U.UDTree,
     nodes.append(root_idx)
     word_idx, punct_idx = remove_punctuation(nodes, tree)
 
-    if len(word_idx) > 1 and len(set([U.get_deprel(el, tree) for el in word_idx])) > 1:
+    if root_deprel in estimates and \
+        len(word_idx) > 1 and \
+        len(set([U.get_deprel(el, tree) for el in word_idx])) > 1:
         # The wanky stuff.
         # MIP program.
         pairwise_orderings = get_optimal_pairwise_ordering(
-            word_idx, tree, estimates
+            word_idx, tree, estimates[root_deprel]
         )
         # SMT solver.
         indices_dict = ordering2indices(pairwise_orderings)
@@ -138,8 +140,8 @@ def get_optimal_pairwise_ordering(
         linear_expression = 0
         for rel1, rel2 in combinations(all_deprels, 2):
             c_ij = c_ji = 0
-            direct = estimates.get((rel1, rel2), 0)
-            reverse = estimates.get((rel2, rel1), 0)
+            direct = estimates.get(f'{rel1}->{rel2}', 0)
+            reverse = estimates.get(f'{rel2}->{rel1}', 0)
             if direct > 0 and reverse > 0:
                 # We have estimates in both directions, need to check
                 # if there is a clear preference.
