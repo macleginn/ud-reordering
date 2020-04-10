@@ -131,6 +131,13 @@ def conll2graph(record):
     return (id_lines, keys, nodes, graph)
 
 
+def conllu2trees(path):
+    with open(path, 'r', encoding='utf-8') as inp:
+        txt = inp.read().strip()
+        blocks = txt.split('\n\n')
+    return [UDTree(*conll2graph(block)) for block in blocks]
+
+
 def conll2graph_w_POS_filter(record, disallowed_POS, relation_list='everywhere'):
     """Similar to vanilla conll2graph, but takes as input an enhanced UD
     representation with probabilities for all possible UPOS tags, example:
