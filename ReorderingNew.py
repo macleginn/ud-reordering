@@ -14,8 +14,9 @@ import UDLib as U
 def reorder_tree(
     tree: U.UDTree,
     estimates: Dict[str,Dict[Tuple[str,str],int]],
+    separate_neg=True,
     with_gurobi=True,
-    separate_neg=True
+    preference_threshold=0.8
 ):
     new_order = []
     root_idx = tree.get_real_root()
@@ -24,7 +25,8 @@ def reorder_tree(
                          estimates,
                          root_idx,
                          new_order,
-                         separate_neg)
+                         separate_neg,
+                         preference_threshold)
     else:
         reorder_tree_rec_no_gurobi(tree,
                                    estimates,
@@ -48,10 +50,10 @@ def reorder_tree(
 
 
 def reorder_tree_rec_no_gurobi(tree: U.UDTree,
-                     estimates: Dict[str,Dict[Tuple[str,str],int]],
-                     root_idx: str,
-                     new_order: List[str],
-                     separate_neg=True):
+                               estimates: Dict[str,Dict[Tuple[str,str],int]],
+                               root_idx: str,
+                               new_order: List[str],
+                               separate_neg=True):
     nodes = tree.get_node_children(root_idx)
     if not nodes:
         # Emit the leave
@@ -92,7 +94,7 @@ def reorder_tree_rec_no_gurobi(tree: U.UDTree,
             new_order.append(root_idx)
         else:
             # Process subtrees.
-            reorder_tree_rec(tree, estimates, n, new_order, separate_neg)
+            reorder_tree_rec_no_gurobi(tree, estimates, n, new_order, separate_neg)
 
 
 def get_empirical_pairwise_ordering(
@@ -134,7 +136,8 @@ def reorder_tree_rec(tree: U.UDTree,
                      estimates: Dict[str,Dict[Tuple[str,str],int]],
                      root_idx: str,
                      new_order: List[str],
-                     separate_neg=True):
+                     separate_neg=True,
+                     preference_threshold=0.8):
     nodes = tree.get_node_children(root_idx)
     if not nodes:
         # Emit the leave
@@ -154,7 +157,7 @@ def reorder_tree_rec(tree: U.UDTree,
         # The wanky stuff.
         # MIP program.
         pairwise_orderings = get_optimal_pairwise_ordering(
-            word_idx, tree, estimates[root_deprel], separate_neg
+            word_idx, tree, estimates[root_deprel], preference_threshold, separate_neg
         )
         # SMT solver.
         indices_dict = ordering2indices(pairwise_orderings)
@@ -180,13 +183,14 @@ def reorder_tree_rec(tree: U.UDTree,
             new_order.append(root_idx)
         else:
             # Process subtrees.
-            reorder_tree_rec(tree, estimates, n, new_order, separate_neg)
+            reorder_tree_rec(tree, estimates, n, new_order, separate_neg, preference_threshold)
 
 
 def get_optimal_pairwise_ordering(
     nodes: List[str],
     tree: U.UDTree,
     estimates: Dict[str,Dict[Tuple[str,str],int]],
+    preference_threshold=0.8,
     separate_neg=True
 ):
     '''
@@ -240,9 +244,9 @@ def get_optimal_pairwise_ordering(
             if direct > 0 and reverse > 0:
                 # We have estimates in both directions, need to check
                 # if there is a clear preference.
-                if direct / (direct+reverse) >= .8:
+                if direct / (direct+reverse) >= preference_threshold:
                     c_ij = 10**5
-                elif reverse / (direct+reverse) >= .8:
+                elif reverse / (direct+reverse) >= preference_threshold:
                     c_ji = 10**5
                 else:
                     # Use the input-expansion order.
