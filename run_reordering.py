@@ -8,26 +8,28 @@ import UDLib as U
 import ReorderingNew as R
 
 
-if len(sys.argv) != 4:
+if len(sys.argv) not in [4,5]:
+    print(repr(sys.argv))
     print('''
 Example usage:
-python3 run_reordering.py data/en_ewt-ud-test.conllu data/estimates/japanese_pud.json data/reordered/en_ewt-ud-test-reordered.conllu
+python3 run_reordering.py data/en_ewt-ud-test.conllu data/estimates/japanese_pud.json data/reordered/en_ewt-ud-test-reordered.conllu [no_gurobi]
 ''')
     sys.exit(1)
 
 input_corpus_path = sys.argv[1]
-estimates_path = sys.argv[2]
-output_path = sys.argv[3]
+estimates_path    = sys.argv[2]
+output_path       = sys.argv[3]
 
 input_trees = U.conllu2trees(input_corpus_path)
 with open(estimates_path, 'r', encoding='utf-8') as inp:
     estimates = json.load(inp)
 
 
-# Capture estimates from the global scope for mapping
+# Capture estimates and the choice whether to use Gurobi
+# from the global scope.
 def reorder_without_exceptions(tree):
     try:
-        result = R.reorder_tree(tree, estimates)
+        result = R.reorder_tree(tree, estimates, len(sys.argv) == 4)
     except Exception as e:
         print(f'Reordering failed : {e}')
         result = None

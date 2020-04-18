@@ -13,14 +13,24 @@ import UDLib as U
 
 def reorder_tree(
     tree: U.UDTree,
-    estimates: Dict[str,Dict[Tuple[str,str],int]]
+    estimates: Dict[str,Dict[Tuple[str,str],int]],
+    with_gurobi=True,
+    separate_neg=True
 ):
     new_order = []
     root_idx = tree.get_real_root()
-    reorder_tree_rec(tree,
-                     estimates,
-                     root_idx,
-                     new_order)
+    if with_gurobi:
+        reorder_tree_rec(tree,
+                         estimates,
+                         root_idx,
+                         new_order,
+                         separate_neg)
+    else:
+        reorder_tree_rec_no_gurobi(tree,
+                                   estimates,
+                                   root_idx,
+                                   new_order,
+                                   separate_neg)
 
     # Transform the tree based on the new ordering.
     # We map the old keys to their new positions
@@ -37,17 +47,101 @@ def reorder_tree(
     return new_tree
 
 
-def reorder_tree_rec(tree: U.UDTree,
+def reorder_tree_rec_no_gurobi(tree: U.UDTree,
                      estimates: Dict[str,Dict[Tuple[str,str],int]],
                      root_idx: str,
-                     new_order: List[str]):
+                     new_order: List[str],
+                     separate_neg=True):
     nodes = tree.get_node_children(root_idx)
     if not nodes:
         # Emit the leave
         new_order.append(root_idx)
         return
 
-    root_deprel = U.get_deprel(root_idx, tree)
+    root_deprel = U.get_deprel(root_idx, tree, separate_neg)
+    if root_deprel == 'punct':
+        raise ValueError(f"The punctuation node {root_idx} has children!")
+
+    nodes.append(root_idx)
+    word_idx, punct_idx = remove_punctuation(nodes, tree)    
+
+    if root_deprel in estimates and len(word_idx) > 1 and \
+        len(set([U.get_deprel(el, tree, separate_neg) for el in word_idx])) > 1:
+        pairwise_orderings = get_empirical_pairwise_ordering(
+            word_idx, tree, estimates[root_deprel], separate_neg
+        )
+
+        # Try to apply SMT.
+        indices_dict = ordering2indices(pairwise_orderings)
+        if indices_dict is not None:
+            word_idx.sort(key=lambda word: indices_dict[U.get_deprel(word, tree, separate_neg)])
+
+            # Place the punctuation back to where it was relative to the root node.
+            nodes = [el for el in word_idx]
+            for p_i in punct_idx:
+                root_pos = nodes.index(root_idx)
+                if int(p_i) < int(root_idx):
+                    nodes.insert(root_pos, p_i)
+                else:
+                    nodes.insert(root_pos+1, p_i)
+
+    # Process the nodes recursively in the linear order.
+    for n in nodes:
+        if n == root_idx:
+            # Emit the root node.
+            new_order.append(root_idx)
+        else:
+            # Process subtrees.
+            reorder_tree_rec(tree, estimates, n, new_order, separate_neg)
+
+
+def get_empirical_pairwise_ordering(
+    nodes: List[str],
+    tree: U.UDTree,
+    estimates: Dict[str,Dict[Tuple[str,str],int]],
+    separate_neg=True
+):
+    '''
+    Converts estimates of relative frequency of different
+    pairwise orderings of deprels into a bunch of binary values.
+    A pair of values for root->aux/aux->root, etc., cannot be straightforwardly
+    contradictory (both values cannot be set to 1), but it cannot be
+    uninformative (both values set to 0) when not enough data were gathered.
+    Moreover, there is no guarantee that there are no loops/transitivity
+    conflicts between variables with different deprels. Use the "optimal"
+    function to ensure that.
+    '''
+    all_deprels = set([U.get_deprel(el, tree, separate_neg) for el in nodes])
+
+    # Construct the variables and set their values at once
+    # based on relative frequencies.
+    var_dict = {}
+    for rel1, rel2 in combinations(all_deprels, 2):
+        key1 = f'{rel1}->{rel2}'
+        key2 = f'{rel2}->{rel1}'
+        freq1 = estimates.get(key1, 0);
+        freq2 = estimates.get(key2, 0);
+        # Both variables cannot be set to 1, but both
+        # can be set to 0, thus leading to an unconstrained ordering.
+        var_dict[key1] = 1 if freq1 > freq2 else 0
+        var_dict[key2] = 1 if freq2 > freq1 else 0
+
+    # Pass the constructed variables with their values to the SMT solver.
+    return [(key, val) for key, val in var_dict.items()]
+
+
+def reorder_tree_rec(tree: U.UDTree,
+                     estimates: Dict[str,Dict[Tuple[str,str],int]],
+                     root_idx: str,
+                     new_order: List[str],
+                     separate_neg=True):
+    nodes = tree.get_node_children(root_idx)
+    if not nodes:
+        # Emit the leave
+        new_order.append(root_idx)
+        return
+
+    root_deprel = U.get_deprel(root_idx, tree, separate_neg)
     if root_deprel == 'punct':
         raise ValueError(f"The punctuation node {root_idx} has children!")
 
@@ -56,11 +150,11 @@ def reorder_tree_rec(tree: U.UDTree,
 
     if root_deprel in estimates and \
         len(word_idx) > 1 and \
-        len(set([U.get_deprel(el, tree) for el in word_idx])) > 1:
+        len(set([U.get_deprel(el, tree, separate_neg) for el in word_idx])) > 1:
         # The wanky stuff.
         # MIP program.
         pairwise_orderings = get_optimal_pairwise_ordering(
-            word_idx, tree, estimates[root_deprel]
+            word_idx, tree, estimates[root_deprel], separate_neg
         )
         # SMT solver.
         indices_dict = ordering2indices(pairwise_orderings)
@@ -68,7 +162,7 @@ def reorder_tree_rec(tree: U.UDTree,
             raise ValueError(f'z3 failed to solve the expansion of {root_idx}.')
 
         # The actual reordering.
-        word_idx.sort(key=lambda word: indices_dict[U.get_deprel(word, tree)])
+        word_idx.sort(key=lambda word: indices_dict[U.get_deprel(word, tree, separate_neg)])
 
     # Place the punctuation back to where it was relative to the root node.
     nodes = [el for el in word_idx]
@@ -86,13 +180,14 @@ def reorder_tree_rec(tree: U.UDTree,
             new_order.append(root_idx)
         else:
             # Process subtrees.
-            reorder_tree_rec(tree, estimates, n, new_order)
+            reorder_tree_rec(tree, estimates, n, new_order, separate_neg)
 
 
 def get_optimal_pairwise_ordering(
     nodes: List[str],
     tree: U.UDTree,
-    estimates: Dict[str,Dict[Tuple[str,str],int]]
+    estimates: Dict[str,Dict[Tuple[str,str],int]],
+    separate_neg=True
 ):
     '''
     Computes an optimal conflict-free pairwise ordering of deprels in
@@ -106,7 +201,7 @@ def get_optimal_pairwise_ordering(
 
         # Create variables for all possible pairwise orderings
         # of deprels in the input expansion.
-        all_deprels = set([U.get_deprel(el, tree) for el in nodes])
+        all_deprels = set([U.get_deprel(el, tree, separate_neg) for el in nodes])
         var_dict = {}
         for rel1, rel2 in combinations(all_deprels, 2):
             key1 = f'{rel1}->{rel2}'  # i,j
@@ -154,8 +249,8 @@ def get_optimal_pairwise_ordering(
                     # Look for all combinations of nodes until
                     # the right one is found.
                     for n1, n2 in combinations(nodes, 2):
-                        r1 = U.get_deprel(n1, tree)
-                        r2 = U.get_deprel(n2, tree)
+                        r1 = U.get_deprel(n1, tree, separate_neg)
+                        r2 = U.get_deprel(n2, tree, separate_neg)
                         if r1 == rel1 and r2 == rel2:
                             c_ij = 1
                             break
@@ -169,8 +264,8 @@ def get_optimal_pairwise_ordering(
             else:
                 # No estimates were learned. Use the input expansion.
                 for n1, n2 in combinations(nodes, 2):
-                    r1 = U.get_deprel(n1, tree)
-                    r2 = U.get_deprel(n2, tree)
+                    r1 = U.get_deprel(n1, tree, separate_neg)
+                    r2 = U.get_deprel(n2, tree, separate_neg)
                     if r1 == rel1 and r2 == rel2:
                         c_ij = 1
                         break

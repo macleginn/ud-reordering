@@ -1,3 +1,4 @@
+import json
 import importlib
 import pathlib
 from pprint import pprint
@@ -67,6 +68,7 @@ def report_reordering_progress(treebank, estimates):
 
 data_dir = pathlib.Path('data')
 ouput_dir = pathlib.Path(data_dir / 'reordered')
+estimates_dir = pathlib.Path(data_dir / 'estimates')
 
 # English data
 trees_en_gum_train = conllu2trees(data_dir / 'en_gum-ud-train.conllu')
@@ -85,9 +87,20 @@ for i, t in enumerate(trees_en_gum_test):
         input()
 
 
+def dump_estimates(est_dict, path):
+    est_dict_str_keys = {}
+    for deprel in est_dict:
+        est_dict_str_keys[deprel] = {
+            f'{r1}->{r2}': count for (r1, r2), count in est_dict[deprel].items()
+        }
+    with open(path, 'w', encoding='utf-8') as out:
+        json.dump(est_dict_str_keys, out, indent=2)
+
 # Learn Japanese ordering and apply it to English.
 trees_ja = conllu2trees(data_dir / 'ja_pud-ud-test.conllu')
 estimates_ja = E.get_ml_directionality_estimates(trees_ja)
+dump_estimates(estimates_ja, estimates_dir / 'japanese_pud.json')
+
 result = ilp.ordering2indices(
     ilp.get_pairwise_ordering(estimates_ja['root'])
 )
@@ -98,6 +111,8 @@ for deprel, idx in sorted(result.items(), key = lambda x: x[1]):
 # Learn German ordering and apply it to English.
 trees_de = conllu2trees(data_dir / 'de_gsd-ud-train.conllu')
 estimates_de = E.get_ml_directionality_estimates(trees_de)
+dump_estimates(estimates_de, estimates_dir / 'german_gsd.json')
+
 
 ewt_en_de_test, ewt_de_test_error = reorder_treebank(trees_en_ewt_test, estimates_de)
 
@@ -106,6 +121,8 @@ error_log_de = reorder_ewt(estimates_de, 'de')
 # Learn Arabic ordering and apply it to English.
 trees_ar = conllu2trees(data_dir / 'ar_pud-ud-test.conllu')
 estimates_ar = E.get_ml_directionality_estimates(trees_ar)
+dump_estimates(estimates_ar, estimates_dir / 'arabic_pud.json')
+
 result = ilp.ordering2indices(
     ilp.get_pairwise_ordering(estimates_ar['root'])
 )
@@ -119,6 +136,9 @@ error_log_ar = reorder_ewt(estimates_ar, 'ar')
 # Learn Irish ordering and apply it to English.
 trees_ga = conllu2trees(data_dir / 'ga_idt_all.conllu')
 estimates_ga = E.get_ml_directionality_estimates(trees_ga)
+dump_estimates(estimates_ga, estimates_dir / 'irish_idt.json')
+
+
 result = ilp.ordering2indices(
     ilp.get_pairwise_ordering(estimates_ga['root'])
 )

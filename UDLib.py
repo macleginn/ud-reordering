@@ -277,13 +277,13 @@ def classify_deprel(deprel):
         return deprel
 
 
-def get_deprel(node_idx: str, tree: UDTree, collapse_categories=False):
+def get_deprel(node_idx: str, tree: UDTree, separate_neg=True, collapse_categories=False):
     '''
-    Reintroduces neg into the set of syntactic relations.
-    Collapses deprels into several classes when asked.
+    Reintroduces neg into the set of syntactic relations and/or
+    collapses deprels into several classes when asked.
     '''
     node = tree.nodes[node_idx]
-    if node.FORM in {'not', 'n’t', "n't"}:  # for English
+    if node.FORM in {'not', 'n’t', "n't"} and separate_neg:  # for English
         return 'neg'
     deprel = node.DEPREL.split(':')[0]
     if deprel != 'advmod':
@@ -291,7 +291,7 @@ def get_deprel(node_idx: str, tree: UDTree, collapse_categories=False):
             return classify_deprel(deprel)
         else:
             return deprel
-    if "Polarity=Neg" in node.FEATS:  # advmod + Polarity=Neg -> neg
+    if 'Polarity=Neg' in node.FEATS and separate_neg:  # advmod + Polarity=Neg -> neg
         return "neg"
     else:
         return deprel
