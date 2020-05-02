@@ -10,11 +10,11 @@ def replace_relation(tree: U.UDTree, old_relation: str, new_relation: str):
     for key in result.keys:
         # Replace in the nodes
         node = result.nodes[key]
-        if node.DEPREL == old_relation:
+        if node.DEPREL.startswith(old_relation):
             result.nodes[key].DEPREL = new_relation
         # Replace in the edges
         for i, edge in enumerate(result.graph[key]):
-            if edge.relation == old_relation:
+            if edge.relation.startswith(old_relation):
                 result.graph[key][i].relation = new_relation
     return result
 
